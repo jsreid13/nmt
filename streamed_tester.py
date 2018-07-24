@@ -1,3 +1,4 @@
+from json import load
 from pickle import load
 from numpy import array
 from numpy import argmax

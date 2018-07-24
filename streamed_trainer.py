@@ -1,3 +1,4 @@
+import json
 from pickle import load
 from numpy import array
 import numpy as np
@@ -125,43 +126,17 @@ def define_model(src_vocab, tar_vocab, src_timesteps, tar_timesteps, n_units):
 
 
 target_language = 'french'
-#  # load datasets
-#  dataset = load_clean_sentences('english-%s-both.pkl' % target_language)
-#  train = load_clean_sentences('english-%s-train.pkl' % target_language)
-#  test = load_clean_sentences('english-%s-test.pkl' % target_language)
 
-#  # prepare english tokenizer
-#  eng_tokenizer = create_tokenizer(dataset[:, 0])
-#  eng_vocab_size = len(eng_tokenizer.word_index) + 1
-#  eng_length = max_length(dataset[:, 0])
-#  print('English Vocabulary Size: %d' % eng_vocab_size)
-#  print('English Max Length: %d' % (eng_length))
-#  # prepare german tokenizer
-#  ger_tokenizer = create_tokenizer(dataset[:, 1])
-#  ger_vocab_size = len(ger_tokenizer.word_index) + 1
-#  ger_length = max_length(dataset[:, 1])
-#  print('German Vocabulary Size: %d' % ger_vocab_size)
-#  print('German Max Length: %d' % (ger_length))
-
-#  # prepare training data
-#  trainX = encode_sequences(ger_tokenizer, ger_length, train[:, 1])
-#  trainY = encode_sequences(eng_tokenizer, eng_length, train[:, 0])
-#  trainY = encode_output(trainY, eng_vocab_size)
-#  # prepare validation data
-#  testX = encode_sequences(ger_tokenizer, ger_length, test[:, 1])
-#  testY = encode_sequences(eng_tokenizer, eng_length, test[:, 0])
-#  testY = encode_output(testY, eng_vocab_size)
-
-
-lines_per_batch = 512
-batches_per_epoch = 5
-src_num_unique_words = 6948
-tar_num_unique_words = 6948
-max_line_length_english = 10
-max_line_length_french = 15
+corpra_stats = json.load(open('corpra/english_%s_stats.json' % target_language, 'r'))
+lines_per_batch = 128
+batches_per_epoch = corpra_stats['number_of_sentences'] // lines_per_batch
+src_num_unique_words = corpra_stats['english_vocabulary']
+tar_num_unique_words = corpra_stats['target_vocabulary']
+max_line_length_english = corpra_stats['longest_english_sentence']
+max_line_length_french = corpra_stats['longest_target_sentence']
 # define model
-model = define_model(src_num_unique_words,
-                     tar_num_unique_words,
+model = define_model(tar_num_unique_words,
+                     src_num_unique_words,
                      max_line_length_french,
                      max_line_length_english,
                      256
@@ -169,7 +144,7 @@ model = define_model(src_num_unique_words,
 model.compile(optimizer='adam', loss='categorical_crossentropy')
 # summarize defined model
 print(model.summary())
-#  plot_model(model, to_file='model.png', show_shapes=True)
+plot_model(model, to_file='model.png', show_shapes=True)
 # fit model
 filename = 'english_%s_model.h5' % target_language
 checkpoint = ModelCheckpoint('models/' + filename,
@@ -188,9 +163,9 @@ checkpoint = ModelCheckpoint('models/' + filename,
 #            verbose=2
 #            )
 
-with open('/mnt/E4A696A5A69677AE/encoded-english-reduced-dataset.txt', 'r') as english_encoded\
-        , open('/mnt/E4A696A5A69677AE/encoded-french-reduced-dataset.txt', 'r') as french_encoded:
-    gen = corpus_sequence(french_encoded,
+with open('corpra/encoded_en.txt', 'r') as english_encoded\
+        , open('corpra/encoded_%s.txt' % target_language, 'r') as target_encoded:
+    gen = corpus_sequence(target_encoded,
                           english_encoded,
                           lines_per_batch,
                           batches_per_epoch,
@@ -200,11 +175,10 @@ with open('/mnt/E4A696A5A69677AE/encoded-english-reduced-dataset.txt', 'r') as e
                           max_line_length_english
                           )
     model.fit_generator(generator=gen,
-                        steps_per_epoch=batches_per_epoch,
-                        epochs=30,
+                        epochs=10,
                         validation_data=gen,
                         callbacks=[checkpoint],
                         verbose=2,
-                        use_multiprocessing=False,
+                        use_multiprocessing=True,
                         workers=1
                         )

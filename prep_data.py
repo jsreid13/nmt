@@ -1,10 +1,13 @@
 import string
 import re
+import json
 from pickle import load
 from pickle import dump
 from numpy.random import shuffle
 from unicodedata import normalize
 from numpy import array
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
 
 
 # load doc into memory
@@ -55,15 +58,31 @@ def clean_pairs(lines):
 
 
 # save a list of clean sentences to file
-def save_clean_data(sentences, filename):
+def save_pickle(sentences, filename):
     dump(sentences, open('pickle/' + filename, 'wb'))
     print('Saved: %s' % filename)
+
+
+# fit a tokenizer
+def create_tokenizer(lines):
+    tokenizer = Tokenizer()
+    tokenizer.fit_on_texts(lines)
+    return tokenizer
+
+
+# encode and pad sequences
+def encode_sequences(tokenizer, lines):
+    # integer encode sequences
+    X = tokenizer.texts_to_sequences(lines)
+    # pad sequences with 0 values
+    #  X = pad_sequences(X, maxlen=length, padding='post')
+    return X
 
 
 target_language = 'french'
 # Clean the data
 # load dataset
-filename = 'deu.txt'
+filename = 'fra.txt'
 doc = load_doc(filename)
 # split into english-target language pairs
 pairs = to_pairs(doc)
@@ -73,17 +92,45 @@ clean_pairs = clean_pairs(pairs)
 for i in range(20):
     print('[%s] => [%s]' % (clean_pairs[i, 0], clean_pairs[i, 1]))
 
+# Tokenize the words
+english_tokenizer = create_tokenizer(clean_pairs[:, 0])
+target_tokenizer = create_tokenizer(clean_pairs[:, 1])
+save_pickle(english_tokenizer, 'english_tokenizer.pkl')
+save_pickle(target_tokenizer, '%s_tokenizer.pkl' % target_language)
+stats = {'longest_english_sentence': 0,
+         'longest_target_sentence': 0,
+         'english_vocabulary': max(english_tokenizer.word_index.values()),
+         'target_vocabulary': max(target_tokenizer.word_index.values()),
+         'number_of_sentences': 0
+         }
+with open('corpra/encoded_en.txt', 'w') as encoded_english_file,\
+        open('corpra/encoded_%s.txt' % target_language, 'w') as encoded_target_file:
+    encoded_english = encode_sequences(english_tokenizer, clean_pairs[:, 0])
+    encoded_target = encode_sequences(target_tokenizer, clean_pairs[:, 1])
+    stats['longest_english_sentence'] = len(max(encoded_english, key=len))
+    stats['longest_target_sentence'] = len(max(encoded_target, key=len))
+    encoded_english_separated = [[str(word) for word in sentence + ['\n']]
+                                 for sentence in encoded_english]
+    encoded_target_separated = [[str(word) for word in sentence + ['\n']]
+                                for sentence in encoded_target]
+    [encoded_english_file.write(' '.join(sentence)) for sentence in encoded_english_separated]
+    [encoded_target_file.write(' '.join(sentence)) for sentence in encoded_target_separated]
+
+# Get stats on the dataset for padding later
+stats['number_of_sentences'] = len(clean_pairs)
+print(stats)
+with open('corpra/english_%s_stats.json' % target_language, 'w') as f:
+    json.dump(stats, f)
 # Split the data
 # reduce dataset size
-n_sentences = 25000
-dataset = clean_pairs[:n_sentences]
+#  dataset = clean_pairs[:n_sentences]
 # Divide the dataset into 90% training, 10% test data
-split = int(n_sentences * 0.9)
+#  split = int(n_sentences * 0.9)
 # random shuffle
-shuffle(dataset)
+#  shuffle(dataset)
 # split into train/test
-train, test = dataset[:split], dataset[split:]
+#  train, test = dataset[:split], dataset[split:]
 # save
-save_clean_data(dataset, 'english-%s-both.pkl' % target_language)
-save_clean_data(train, 'english-%s-train.pkl' % target_language)
-save_clean_data(test, 'english-%s-test.pkl' % target_language)
+#  save_pickle(dataset, 'english-%s-both.pkl' % target_language)
+#  save_pickle(train, 'english-%s-train.pkl' % target_language)
+#  save_pickle(test, 'english-%s-test.pkl' % target_language)
