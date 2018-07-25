@@ -93,20 +93,22 @@ for i in range(20):
     print('[%s] => [%s]' % (clean_pairs[i, 0], clean_pairs[i, 1]))
 
 # Tokenize the words
-english_tokenizer = create_tokenizer(clean_pairs[:, 0])
-target_tokenizer = create_tokenizer(clean_pairs[:, 1])
+vocab_length = 5000
+idx_phrase = [len(sentence.split(' ')) for sentence in clean_pairs[:, 0]].index(10)
+english_tokenizer = create_tokenizer(clean_pairs[:idx_phrase, 0])
+target_tokenizer = create_tokenizer(clean_pairs[:idx_phrase, 1])
 save_pickle(english_tokenizer, 'english_tokenizer.pkl')
 save_pickle(target_tokenizer, '%s_tokenizer.pkl' % target_language)
 stats = {'longest_english_sentence': 0,
          'longest_target_sentence': 0,
          'english_vocabulary': max(english_tokenizer.word_index.values()),
          'target_vocabulary': max(target_tokenizer.word_index.values()),
-         'number_of_sentences': 0
+         'number_of_sentences': idx_phrase
          }
 with open('corpra/encoded_en.txt', 'w') as encoded_english_file,\
         open('corpra/encoded_%s.txt' % target_language, 'w') as encoded_target_file:
-    encoded_english = encode_sequences(english_tokenizer, clean_pairs[:, 0])
-    encoded_target = encode_sequences(target_tokenizer, clean_pairs[:, 1])
+    encoded_english = encode_sequences(english_tokenizer, clean_pairs[:idx_phrase, 0])
+    encoded_target = encode_sequences(target_tokenizer, clean_pairs[:idx_phrase, 1])
     stats['longest_english_sentence'] = len(max(encoded_english, key=len))
     stats['longest_target_sentence'] = len(max(encoded_target, key=len))
     encoded_english_separated = [[str(word) for word in sentence + ['\n']]
@@ -117,7 +119,7 @@ with open('corpra/encoded_en.txt', 'w') as encoded_english_file,\
     [encoded_target_file.write(' '.join(sentence)) for sentence in encoded_target_separated]
 
 # Get stats on the dataset for padding later
-stats['number_of_sentences'] = len(clean_pairs)
+#  stats['number_of_sentences'] = len(clean_pairs)
 print(stats)
 with open('corpra/english_%s_stats.json' % target_language, 'w') as f:
     json.dump(stats, f)
