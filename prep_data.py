@@ -64,8 +64,8 @@ def save_pickle(sentences, filename):
 
 
 # fit a tokenizer
-def create_tokenizer(lines):
-    tokenizer = Tokenizer()
+def create_tokenizer(lines, vocab=None):
+    tokenizer = Tokenizer(num_words=vocab)
     tokenizer.fit_on_texts(lines)
     return tokenizer
 
@@ -93,16 +93,16 @@ for i in range(20):
     print('[%s] => [%s]' % (clean_pairs[i, 0], clean_pairs[i, 1]))
 
 # Tokenize the words
-vocab_length = 5000
+vocab_length = 2000
 idx_phrase = [len(sentence.split(' ')) for sentence in clean_pairs[:, 0]].index(10)
-english_tokenizer = create_tokenizer(clean_pairs[:idx_phrase, 0])
-target_tokenizer = create_tokenizer(clean_pairs[:idx_phrase, 1])
+english_tokenizer = create_tokenizer(clean_pairs[:idx_phrase, 0], vocab_length)
+target_tokenizer = create_tokenizer(clean_pairs[:idx_phrase, 1], vocab_length)
 save_pickle(english_tokenizer, 'english_tokenizer.pkl')
 save_pickle(target_tokenizer, '%s_tokenizer.pkl' % target_language)
 stats = {'longest_english_sentence': 0,
          'longest_target_sentence': 0,
-         'english_vocabulary': max(english_tokenizer.word_index.values()),
-         'target_vocabulary': max(target_tokenizer.word_index.values()),
+         'english_vocabulary': vocab_length,  # max(english_tokenizer.word_index.values()),
+         'target_vocabulary': vocab_length,  # max(target_tokenizer.word_index.values()),
          'number_of_sentences': idx_phrase
          }
 with open('corpra/encoded_en.txt', 'w') as encoded_english_file,\

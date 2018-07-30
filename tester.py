@@ -93,13 +93,13 @@ train = asarray(load_clean_sentences('english-%s-train.pkl' % target_language))
 test = asarray(load_clean_sentences('english-%s-test.pkl' % target_language))
 
 # prepare english tokenizer
-eng_tokenizer = create_tokenizer(dataset[:, 0])
-#  eng_tokenizer = load(open('/mnt/E4A696A5A69677AE/en_tokenizer.pkl', 'rb'))
+#  eng_tokenizer = create_tokenizer(dataset[:, 0])
+eng_tokenizer = load(open('pickle/english_tokenizer.pkl', 'rb'))
 eng_vocab_size = len(eng_tokenizer.word_index) + 1
 eng_length = max_length(dataset[:, 0])
-# prepare german tokenizer
-ger_tokenizer = create_tokenizer(dataset[:, 1])
-#  ger_tokenizer = load(open('/mnt/E4A696A5A69677AE/fr_tokenizer.pkl', 'rb'))
+# prepare target tokenizer
+#  ger_tokenizer = create_tokenizer(dataset[:, 1])
+ger_tokenizer = load(open('pickle/%s_tokenizer.pkl' % target_language, 'rb'))
 ger_vocab_size = len(ger_tokenizer.word_index) + 1
 ger_length = max_length(dataset[:, 1])
 # prepare data, column 0 is english, 1 is german
@@ -112,7 +112,7 @@ model = load_model('models/english_%s_model.h5' % target_language)
 #  print('train')
 #  evaluate_model(model, eng_tokenizer, trainX, train)
 # test on some test sequences
-#  print('test')
-#  evaluate_model(model, eng_tokenizer, testX, test)
-phrase = 'de rien'
-user_evaluate_model(model, eng_tokenizer, encode_sequences(ger_tokenizer, ger_length, [phrase]), phrase)
+print('test')
+evaluate_model(model, eng_tokenizer, testX, test)
+#  phrase = 'de rien'
+#  user_evaluate_model(model, eng_tokenizer, encode_sequences(ger_tokenizer, ger_length, [phrase]), phrase)

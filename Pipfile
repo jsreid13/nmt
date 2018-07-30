@@ -13,7 +13,6 @@ tensorflow = "*"
 nltk = "*"
 jupyter = "*"
 matplotlib = "*"
-jieba = "*"
 pydot = "*"
 
 

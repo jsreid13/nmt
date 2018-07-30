@@ -1,5 +1,6 @@
 from pickle import load
 from numpy import array
+import json
 import numpy as np
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
@@ -49,13 +50,13 @@ class corpus_sequence(Sequence):
             yield line
 
 
-# load a clean dataset
-def load_clean_sentences(filename):
-    return load(open('pickle/' + filename, 'rb'))
-
-
-# fit a tokenizer
 def create_tokenizer(lines):
+    """
+    Initialize a tokenizer and get it to assign unique interger token to each word
+
+    "param list lines: Lines of text to be tokenzied by the tokenizer
+    :returns: Tokenizer
+    """
     tokenizer = Tokenizer()
     tokenizer.fit_on_texts(lines)
     return tokenizer
@@ -66,8 +67,17 @@ def max_length(lines):
     return max(len(line.split()) for line in lines)
 
 
-# encode and pad sequences
 def encode_sequences(tokenizer, length, lines):
+    """
+    Since the tokenizer changes what interger it assigns each word to based on their
+    frequency, we must encode the words after the tokenizer has been fit on the entire
+    dataset, then we pad the end of each sentence with 0's so that they're all the same
+    length
+
+    :param Tokenizer tokenizer: The tokenizer to use to get the tokens for each word
+    :param int length: The length that each sentence will be padded up to
+    :param list lines: List of strings of text to be tokenized and padded
+    """
     # integer encode sequences
     X = tokenizer.texts_to_sequences(lines)
     # pad sequences with 0 values
@@ -75,8 +85,15 @@ def encode_sequences(tokenizer, length, lines):
     return X
 
 
-# one hot encode target sequence
 def encode_output(sequences, vocab_size):
+    """
+    Convert a list of tokens into a sparse array that is one hot encoded for each word
+
+    :param list sequences: A list containing lists of integer tokens representing each
+    word in that sentence
+    :param int vocab_size: Sets the number of columns to include for each word when one hot encoded
+    :returns: One hot encoded sentences
+    """
     ylist = list()
     for sequence in sequences:
         encoded = to_categorical(sequence, num_classes=vocab_size)
@@ -86,8 +103,19 @@ def encode_output(sequences, vocab_size):
     return y
 
 
-# define NMT model
 def define_model(src_vocab, tar_vocab, src_timesteps, tar_timesteps, n_units):
+    """
+    The Keras neural network created for this translation. This uses the encoder-decoder
+    architecture with LSTM encoders and decoders to convert the sentences into a fixed
+    length word vector
+
+    :param int src_vocab: Number of unique words tokenized in the source language
+    :param int tar_vocab: Number of unique words tokenized in the target language
+    :param int src_timesteps: Maximum number of words in a phrase in the source language
+    :param int tar_timesteps: Maximum number of words in a phrase in the target language
+    :param int n_units: Number of LSTM neurons in the encoder and decoder
+    :returns: A Keras model
+    """
     model = Sequential()
     model.add(Embedding(src_vocab, n_units, input_length=src_timesteps, mask_zero=True))
     model.add(LSTM(n_units))
@@ -99,42 +127,49 @@ def define_model(src_vocab, tar_vocab, src_timesteps, tar_timesteps, n_units):
 
 target_language = 'french'
 # load datasets
-dataset = np.asarray(load_clean_sentences('english-%s-both.pkl' % target_language))
-train = np.asarray(load_clean_sentences('english-%s-train.pkl' % target_language))
-test = np.asarray(load_clean_sentences('english-%s-test.pkl' % target_language))
+dataset = np.asarray(load(open('pickle/english-%s-both.pkl' % target_language, 'rb')))
+train = np.asarray(load(open('pickle/english-%s-train.pkl' % target_language, 'rb')))
+test = np.asarray(load(open('pickle/english-%s-test.pkl' % target_language, 'rb')))
 
-# prepare english tokenizer
-eng_tokenizer = create_tokenizer(dataset[:, 0])
-#  eng_tokenizer = load(open('/mnt/E4A696A5A69677AE/en_tokenizer.pkl', 'rb'))
-eng_vocab_size = len(eng_tokenizer.word_index) + 1
-eng_length = max_length(dataset[:, 0])
-print('English Vocabulary Size: %d' % eng_vocab_size)
-print('English Max Length: %d' % (eng_length))
+corpra_stats = json.load(open('corpra/english_%s_stats.json' % target_language, 'r'))
+lines_per_batch = 2048
+batches_per_epoch = corpra_stats['number_of_sentences'] // lines_per_batch
+src_num_unique_words = corpra_stats['english_vocabulary'] + 1
+tar_num_unique_words = corpra_stats['target_vocabulary'] + 1
+src_max_line_length = corpra_stats['longest_english_sentence']
+tar_max_line_length = corpra_stats['longest_target_sentence']
+
+# prepare English tokenizer
+#  eng_tokenizer = create_tokenizer(dataset[:, 0])
+src_tokenizer = load(open('pickle/english_tokenizer.pkl', 'rb'))
+#  eng_vocab_size = len(eng_tokenizer.word_index) + 1
+#  eng_length = max_length(dataset[:, 0])
+print('English Vocabulary Size: %d' % src_num_unique_words)
+print('English Max Length: %d' % (src_max_line_length))
 # prepare german tokenizer
-ger_tokenizer = create_tokenizer(dataset[:, 1])
-#  ger_tokenizer = load(open('/mnt/E4A696A5A69677AE/fr_tokenizer.pkl', 'rb'))
-ger_vocab_size = len(ger_tokenizer.word_index) + 1
-ger_length = max_length(dataset[:, 1])
-print('%s Vocabulary Size: %d' % (target_language, ger_vocab_size))
-print('%s Max Length: %d' % (target_language, ger_length))
+#  tar_tokenizer = create_tokenizer(dataset[:, 1])
+tar_tokenizer = load(open('pickle/%s_tokenizer.pkl' % target_language, 'rb'))
+#  tar_vocab_size = len(tar_tokenizer.word_index) + 1
+#  tar_length = max_length(dataset[:, 1])
+print('%s Vocabulary Size: %d' % (target_language, tar_num_unique_words))
+print('%s Max Length: %d' % (target_language, src_max_line_length))
 
 # prepare training data
-trainX = encode_sequences(ger_tokenizer, ger_length, train[:, 1])
-trainY = encode_sequences(eng_tokenizer, eng_length, train[:, 0])
-trainY = encode_output(trainY, eng_vocab_size)
+trainX = encode_sequences(tar_tokenizer, tar_max_line_length, train[:, 1])
+trainY = encode_sequences(src_tokenizer, src_max_line_length, train[:, 0])
+trainY = encode_output(trainY, src_num_unique_words)
 # prepare validation data
-testX = encode_sequences(ger_tokenizer, ger_length, test[:, 1])
-ger_tokenizer = 0
-testY = encode_sequences(eng_tokenizer, eng_length, test[:, 0])
+testX = encode_sequences(tar_tokenizer, tar_max_line_length, test[:, 1])
+tar_tokenizer = 0
+testY = encode_sequences(src_tokenizer, src_max_line_length, test[:, 0])
 eng_tokenizer = 0
-testY = encode_output(testY, eng_vocab_size)
-
+testY = encode_output(testY, src_num_unique_words)
 
 # define model
-model = define_model(ger_vocab_size,
-                     eng_vocab_size,
-                     ger_length,
-                     eng_length,
+model = define_model(tar_num_unique_words,
+                     src_num_unique_words,
+                     tar_max_line_length,
+                     src_max_line_length,
                      256
                      )
 model.compile(optimizer='adam', loss='categorical_crossentropy')
@@ -151,17 +186,9 @@ checkpoint = ModelCheckpoint('models/' + filename,
                              )
 model.fit(trainX,
           trainY,
-          epochs=30,
+          epochs=10,
           batch_size=64,
           validation_data=(testX, testY),
           callbacks=[checkpoint],
           verbose=2
           )
-#  model.fit_generator(corpus_sequence(trainX, trainY, batch_size=64),
-#                      epochs=30,
-#                      validation_data=(testX, testY),
-#                      callbacks=[checkpoint],
-#                      verbose=2,
-#                      use_multiprocessing=True,
-#                      workers=4
-#                      )

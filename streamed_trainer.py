@@ -1,6 +1,8 @@
+import sys
 import json
 from pickle import load
 from numpy import array
+from random import shuffle
 import numpy as np
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
@@ -37,13 +39,15 @@ class corpus_sequence(Sequence):
                  ):
         self.batch_size = batch_size
         # load datasets
-        self.train = train
-        self.test = test
         self.batches_per_epoch = batches_per_epoch
         self.src_vocab = src_vocab
         self.tar_vocab = tar_vocab
         self.line_length_french = line_length_french
         self.line_length_english = line_length_english
+        self.src = np.genfromtxt(train)
+        print(sys.getsizeof(self.src, dtype=np.int16, missing_values=0))
+        self.tar = np.genfromtxt(test)
+        print(sys.getsizeof(self.tar, np.int16, missing_values=0))
         self.batch_counter = 0
 
     def __len__(self):
@@ -63,35 +67,39 @@ class corpus_sequence(Sequence):
         """
         train_sample = np.empty((self.batch_size, self.line_length_french), dtype=int)
         test_sample = np.empty((self.batch_size, self.line_length_english), dtype=int)
-        for i in range(self.batch_size):
-            train_line = self.train.readline()
+        for i in range(self.batch_counter * self.batch_size,
+                       (self.batch_counter + 1) * self.batch_size):
+            try:
+                train_line = self.src[i]
+            except IndexError:
+                print(i)
             split_train_line = [int(weight) for weight in train_line.strip().split(' ')
                                 if weight != '']
             len_train = len(split_train_line)
             # Pad with zeros
             [split_train_line.append(0.0) for i in range(self.line_length_french - len_train)]
 
-            test_line = self.test.readline()
-            split_test_line = [int(weight) for weight in test_line.strip().split(' ')]
+            test_line = self.tar[i]
+            split_test_line = [int(weight) for weight in test_line.strip().split(' ')
+                               if weight != '']
             len_test = len(split_test_line)
             [split_test_line.append(0.0) for i in range(self.line_length_english - len_test)]
 
-            train_sample[i] = array(split_train_line)
-            test_sample[i] = array(split_test_line)
+            train_sample[i - (self.batch_counter * self.batch_size)] = array(split_train_line)
+            test_sample[i - (self.batch_counter * self.batch_size)] = array(split_test_line)
 
-        #  self.batch_counter += 1
-        #  print(self.batch_counter / self.batches_per_epoch)
+        self.batch_counter += 1
 
         return train_sample, to_categorical(test_sample, num_classes=self.src_vocab)
 
     def on_epoch_end(self):
-        """Restart at the beginning on the text file so we're not always training on new data
+        """Shuffle the datasets each epoch
         :returns: None
 
         """
-        self.train.seek(0)
-        self.test.seek(0)
-        #  self.batch_counter = 0
+        shuffle(self.src)
+        shuffle(self.tar)
+        self.batch_counter = 0
 
 
 def define_model(src_vocab, tar_vocab, src_timesteps, tar_timesteps, n_units):
@@ -119,10 +127,10 @@ def define_model(src_vocab, tar_vocab, src_timesteps, tar_timesteps, n_units):
 target_language = 'french'
 
 corpra_stats = json.load(open('corpra/english_%s_stats.json' % target_language, 'r'))
-lines_per_batch = 256
+lines_per_batch = 2048
 batches_per_epoch = corpra_stats['number_of_sentences'] // lines_per_batch
-src_num_unique_words = corpra_stats['english_vocabulary']
-tar_num_unique_words = corpra_stats['target_vocabulary']
+src_num_unique_words = corpra_stats['english_vocabulary'] + 1
+tar_num_unique_words = corpra_stats['target_vocabulary'] + 1
 max_line_length_english = corpra_stats['longest_english_sentence']
 max_line_length_french = corpra_stats['longest_target_sentence']
 
@@ -174,6 +182,6 @@ with open('corpra/encoded_en.txt', 'r') as english_encoded\
                         validation_data=gen,
                         callbacks=[checkpoint],
                         verbose=1,
-                        use_multiprocessing=True,
+                        use_multiprocessing=False,
                         workers=1
                         )

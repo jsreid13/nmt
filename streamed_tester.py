@@ -110,7 +110,6 @@ for i in range(num_samples):
     # Convert string numbers to integers for tokenizer
     raw_source.append([int(token) for token in src_sentence])
     raw_target.append([int(token) for token in tar_sentence])
-    print(pad_sequences(raw_source, corpra_stats['longest_target_sentence'], padding='post'))
 
 evaluate_model(model,
                eng_tokenizer,
