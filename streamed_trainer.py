@@ -1,4 +1,3 @@
-import sys
 import json
 from pickle import load
 from numpy import array
@@ -17,8 +16,6 @@ from keras.layers import RepeatVector
 from keras.layers import TimeDistributed
 from keras.callbacks import ModelCheckpoint
 
-from pprint import pprint
-
 
 class corpus_sequence(Sequence):
 
@@ -28,27 +25,23 @@ class corpus_sequence(Sequence):
     """
 
     def __init__(self,
-                 train,
-                 test,
+                 pairs,
                  batch_size,
                  batches_per_epoch,
                  src_vocab,
                  tar_vocab,
-                 line_length_french,
-                 line_length_english
+                 line_length_src,
+                 line_length_tar
                  ):
         self.batch_size = batch_size
-        # load datasets
         self.batches_per_epoch = batches_per_epoch
         self.src_vocab = src_vocab
+        # Target are the labels
         self.tar_vocab = tar_vocab
-        self.line_length_french = line_length_french
-        self.line_length_english = line_length_english
-        self.src = np.genfromtxt(train)
-        print(sys.getsizeof(self.src, dtype=np.int16, missing_values=0))
-        self.tar = np.genfromtxt(test)
-        print(sys.getsizeof(self.tar, np.int16, missing_values=0))
-        self.batch_counter = 0
+        self.line_length_src = line_length_src
+        self.line_length_tar = line_length_tar
+        # load datasets
+        self.pairs = np.genfromtxt(pairs, autostrip=True, dtype=np.int16)
 
     def __len__(self):
         """
@@ -65,41 +58,25 @@ class corpus_sequence(Sequence):
         :returns: tuple with 2 numpy arrays
 
         """
-        train_sample = np.empty((self.batch_size, self.line_length_french), dtype=int)
-        test_sample = np.empty((self.batch_size, self.line_length_english), dtype=int)
-        for i in range(self.batch_counter * self.batch_size,
-                       (self.batch_counter + 1) * self.batch_size):
-            try:
-                train_line = self.src[i]
-            except IndexError:
-                print(i)
-            split_train_line = [int(weight) for weight in train_line.strip().split(' ')
-                                if weight != '']
-            len_train = len(split_train_line)
-            # Pad with zeros
-            [split_train_line.append(0.0) for i in range(self.line_length_french - len_train)]
+        source_sample = np.empty((self.batch_size, self.line_length_src), dtype=int)
+        target_sample = np.empty((self.batch_size, self.line_length_tar), dtype=int)
+        for i in range(idx * self.batch_size, (idx + 1) * self.batch_size):
+            source_phrase = self.pairs[i, 0:self.line_length_src]
+            target_phrase = self.pairs[i, self.line_length_src:]
+            split_source = [int(weight) for weight in source_phrase if weight != '']
+            split_target = [int(weight) for weight in target_phrase if weight != '']
 
-            test_line = self.tar[i]
-            split_test_line = [int(weight) for weight in test_line.strip().split(' ')
-                               if weight != '']
-            len_test = len(split_test_line)
-            [split_test_line.append(0.0) for i in range(self.line_length_english - len_test)]
+            source_sample[i - (idx * self.batch_size)] = array(split_source)
+            target_sample[i - (idx * self.batch_size)] = array(split_target)
 
-            train_sample[i - (self.batch_counter * self.batch_size)] = array(split_train_line)
-            test_sample[i - (self.batch_counter * self.batch_size)] = array(split_test_line)
-
-        self.batch_counter += 1
-
-        return train_sample, to_categorical(test_sample, num_classes=self.src_vocab)
+        return source_sample, to_categorical(target_sample, num_classes=self.tar_vocab)
 
     def on_epoch_end(self):
         """Shuffle the datasets each epoch
         :returns: None
 
         """
-        shuffle(self.src)
-        shuffle(self.tar)
-        self.batch_counter = 0
+        shuffle(self.pairs)
 
 
 def define_model(src_vocab, tar_vocab, src_timesteps, tar_timesteps, n_units):
@@ -124,21 +101,25 @@ def define_model(src_vocab, tar_vocab, src_timesteps, tar_timesteps, n_units):
     return model
 
 
-target_language = 'french'
+source_language = 'french'
+target_language = 'english'
 
-corpra_stats = json.load(open('corpra/english_%s_stats.json' % target_language, 'r'))
-lines_per_batch = 2048
-batches_per_epoch = corpra_stats['number_of_sentences'] // lines_per_batch
-src_num_unique_words = corpra_stats['english_vocabulary'] + 1
+corpra_stats = json.load(open('corpra/%s_to_%s_stats.json' % (source_language, target_language), 'r'))
+lines_per_batch = 512
+# Minus 1 because the generator takes lines from the current batch_count to batch_count+1
+# so it overflows the end of the dataset otherwise
+train_batches_per_epoch = corpra_stats['number_of_train_phrases'] // lines_per_batch - 1
+val_batches_per_epoch = corpra_stats['number_of_val_phrases'] // lines_per_batch - 1
+src_num_unique_words = corpra_stats['source_vocabulary'] + 1
 tar_num_unique_words = corpra_stats['target_vocabulary'] + 1
-max_line_length_english = corpra_stats['longest_english_sentence']
-max_line_length_french = corpra_stats['longest_target_sentence']
+max_line_length_src = corpra_stats['longest_source_phrase']
+max_line_length_tar = corpra_stats['longest_target_phrase']
 
 # define model
-model = define_model(tar_num_unique_words,
-                     src_num_unique_words,
-                     max_line_length_french,
-                     max_line_length_english,
+model = define_model(src_num_unique_words,
+                     tar_num_unique_words,
+                     max_line_length_src,
+                     max_line_length_tar,
                      256
                      )
 
@@ -146,10 +127,10 @@ model.compile(optimizer='adam', loss='categorical_crossentropy')
 
 # summarize defined model
 print(model.summary())
-plot_model(model, to_file='model.png', show_shapes=True)
+#  plot_model(model, to_file='model.png', show_shapes=True)
 
 # fit model
-filename = 'english_%s_model.h5' % target_language
+filename = '%s_%s_model.h5' % (source_language, target_language)
 checkpoint = ModelCheckpoint('models/' + filename,
                              monitor='val_loss',
                              verbose=1,
@@ -166,22 +147,27 @@ checkpoint = ModelCheckpoint('models/' + filename,
 #            verbose=2
 #            )
 
-with open('corpra/encoded_en.txt', 'r') as english_encoded\
-        , open('corpra/encoded_%s.txt' % target_language, 'r') as target_encoded:
-    gen = corpus_sequence(target_encoded,
-                          english_encoded,
+train_gen = corpus_sequence('corpra/%s_to_%s_train.txt' % (source_language, target_language),
+                            lines_per_batch,
+                            train_batches_per_epoch,
+                            src_num_unique_words,
+                            tar_num_unique_words,
+                            max_line_length_src,
+                            max_line_length_tar
+                            )
+val_gen = corpus_sequence('corpra/%s_to_%s_val.txt' % (source_language, target_language),
                           lines_per_batch,
-                          batches_per_epoch,
+                          val_batches_per_epoch,
                           src_num_unique_words,
                           tar_num_unique_words,
-                          max_line_length_french,
-                          max_line_length_english
+                          max_line_length_src,
+                          max_line_length_tar
                           )
-    model.fit_generator(generator=gen,
-                        epochs=30,
-                        validation_data=gen,
-                        callbacks=[checkpoint],
-                        verbose=1,
-                        use_multiprocessing=False,
-                        workers=1
-                        )
+model.fit_generator(generator=train_gen,
+                    epochs=30,
+                    validation_data=val_gen,
+                    callbacks=[checkpoint],
+                    verbose=1,
+                    use_multiprocessing=False,
+                    workers=1
+                    )

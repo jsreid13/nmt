@@ -37,6 +37,8 @@ def encode_sequences(tokenizer, length, lines):
 
 # map an integer to a word
 def word_for_id(integer, tokenizer):
+    if integer == 0:
+        return ''
     for word, index in tokenizer.word_index.items():
         if index == integer:
             return word
@@ -47,26 +49,27 @@ def word_for_id(integer, tokenizer):
 def predict_sequence(model, tokenizer, source):
     prediction = model.predict(source, verbose=0)[0]
     integers = [argmax(vector) for vector in prediction]
-    print(integers)
     target = list()
     for i in integers:
         word = word_for_id(i, tokenizer)
-        if word is None:
+        if word is '':
             break
         target.append(word)
     return ' '.join(target)
 
 
 # evaluate the skill of the model
-def evaluate_model(model, tokenizer, sources, target, src):
+def evaluate_model(model, src_tokenizer, tar_tokenizer, source, target):
     actual, predicted = list(), list()
     with open('fr_en_translations.txt', 'w') as all_translations:
-        for i, source in enumerate(sources):
+        for i, encoded_phrase in enumerate(source):
             # translate encoded source text
-            source = source.reshape((1, source.shape[0]))  # convert vector to array for predict method
-            translation = predict_sequence(model, tokenizer, source)
-            raw_tar = ' '.join([word_for_id(token, tokenizer) for token in target[i]])
-            raw_src = ' '.join([word_for_id(token, fr_tokenizer) for token in src[i]])
+            # convert vector to array for predict method
+            encoded_phrase = array(encoded_phrase)
+            encoded_phrase = encoded_phrase.reshape((1, encoded_phrase.shape[0]))
+            translation = predict_sequence(model, src_tokenizer, encoded_phrase)
+            raw_tar = ' '.join([word_for_id(token, tar_tokenizer) for token in target[i]]).strip()
+            raw_src = ' '.join([word_for_id(token, src_tokenizer) for token in source[i]]).strip()
             if i < 10:
                 print('src=[%s], target=[%s], predicted=[%s]' %
                       (raw_src, raw_tar, translation))
@@ -81,39 +84,37 @@ def evaluate_model(model, tokenizer, sources, target, src):
     print('BLEU-4: %f' % corpus_bleu(actual, predicted, weights=(0.25, 0.25, 0.25, 0.25)))
 
 
-target_language = 'french'
+source_language = 'french'
+target_language = 'english'
 # load datasets
-eng_tokenizer = load(open('pickle/english_tokenizer.pkl', 'rb'))
-fr_tokenizer = load(open('pickle/%s_tokenizer.pkl' % target_language, 'rb'))
-#  print(eng_tokenizer.word_index.values())
-#  eng_tokenizer = Tokenizer()
-#  fr_tokenizer = Tokenizer()
-train = open('corpra/encoded_%s.txt' % target_language, 'r')
-test = open('corpra/encoded_en.txt', 'r')
+src_tokenizer = load(open('pickle/%s_tokenizer.pkl' % source_language, 'rb'))
+tar_tokenizer = load(open('pickle/%s_tokenizer.pkl' % target_language, 'rb'))
+
+test_file = open('corpra/%s_to_%s_test.txt' % (source_language, target_language), 'r')
 
 # load model
-model = load_model('models/english_%s_model.h5' % target_language)
+model = load_model('models/%s_%s_model.h5' % (source_language, target_language))
 # test on some training sequences
 #  print('train')
 #  evaluate_model(model, eng_tokenizer, trainX, train)
 # test on some test sequences
-print('test')
-corpra_stats = json.load(open('corpra/english_%s_stats.json' % target_language, 'r'))
+corpra_stats = json.load(open('corpra/%s_to_%s_stats.json' % (source_language, target_language), 'r'))
 num_samples = 10
 raw_source = []
 raw_target = []
 for i in range(num_samples):
-    src_sentence = train.readline().strip().split(' ')
-    tar_sentence = test.readline().strip().split(' ')
-    if src_sentence[0] is '' or tar_sentence[0] is '':
-        continue
+    pair = test_file.readline().split(' ')
+    if pair == '':
+        break
+    src_sentence = pair[:corpra_stats['longest_source_phrase']]
+    tar_sentence = pair[corpra_stats['longest_source_phrase']:]
     # Convert string numbers to integers for tokenizer
     raw_source.append([int(token) for token in src_sentence])
     raw_target.append([int(token) for token in tar_sentence])
 
 evaluate_model(model,
-               eng_tokenizer,
-               pad_sequences(raw_source, corpra_stats['longest_target_sentence'], padding='post'),
-               raw_target,
-               raw_source
+               src_tokenizer,
+               tar_tokenizer,
+               raw_source,
+               raw_target
                )
