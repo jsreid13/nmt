@@ -51,6 +51,19 @@ class corpus_sequence(Sequence):
         """
         return self.batches_per_epoch
 
+    def encode_output(self, sequences):
+        """TODO: Docstring for encode_output.
+        :returns: TODO
+
+        """
+        ylist = list()
+        for sequence in sequences:
+            encoded = to_categorical(sequence, num_classes=self.tar_vocab)
+            ylist.append(encoded)
+        y = array(ylist)
+        y = y.reshape(sequences.shape[0], sequences.shape[1], self.tar_vocab)
+        return y
+
     def __getitem__(self, idx):
         """
         Returns a tuple of (source text, target translation) pairs, with the
@@ -60,23 +73,19 @@ class corpus_sequence(Sequence):
         """
         source_sample = np.empty((self.batch_size, self.line_length_src), dtype=int)
         target_sample = np.empty((self.batch_size, self.line_length_tar), dtype=int)
+
         for i in range(idx * self.batch_size, (idx + 1) * self.batch_size):
-            source_phrase = self.pairs[i, 0:self.line_length_src]
-            target_phrase = self.pairs[i, self.line_length_src:]
-            split_source = [int(weight) for weight in source_phrase if weight != '']
-            split_target = [int(weight) for weight in target_phrase if weight != '']
+            source_sample[i - (idx * self.batch_size)] = array(self.pairs[i, :self.line_length_src])
+            target_sample[i - (idx * self.batch_size)] = array(self.pairs[i, self.line_length_src:])
 
-            source_sample[i - (idx * self.batch_size)] = array(split_source)
-            target_sample[i - (idx * self.batch_size)] = array(split_target)
-
-        return source_sample, to_categorical(target_sample, num_classes=self.tar_vocab)
+        return source_sample, self.encode_output(target_sample)
 
     def on_epoch_end(self):
         """Shuffle the datasets each epoch
         :returns: None
 
         """
-        shuffle(self.pairs)
+        np.random.shuffle(self.pairs)
 
 
 def define_model(src_vocab, tar_vocab, src_timesteps, tar_timesteps, n_units):
@@ -168,6 +177,6 @@ model.fit_generator(generator=train_gen,
                     validation_data=val_gen,
                     callbacks=[checkpoint],
                     verbose=1,
-                    use_multiprocessing=False,
-                    workers=1
+                    use_multiprocessing=True,
+                    workers=6
                     )
