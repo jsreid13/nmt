@@ -3,7 +3,7 @@ import re
 import json
 from pickle import load
 from pickle import dump
-from numpy.random import shuffle
+from random import shuffle
 from unicodedata import normalize
 from numpy import array
 from keras.preprocessing.text import Tokenizer
@@ -28,14 +28,14 @@ def to_pairs(doc):
     return pairs
 
 
-def clean_phrase(phrase, trans_table):
+def clean_phrase(phrase, trans_table, re_print):
     """TODO: Docstring for clean_phrase.
 
     :phrase: Phrase of text
     :returns: Cleaned phrase of text
     """
     # normalize unicode characters
-    #  line = normalize('NFD', line).encode('ascii', 'ignore')
+    #  line = normalize('NFD', phrase).encode('ascii', 'ignore')
     #  line = line.decode('UTF-8')
     # tokenize on white space
     line = phrase.split()
@@ -55,12 +55,12 @@ def clean_phrase(phrase, trans_table):
 def clean_pairs(parallel_text):
     cleaned = list()
     # prepare regex for char filtering
-    #  re_print = re.compile('[^%s]' % re.escape(string.printable))
+    re_print = re.compile('[^%s]' % re.escape(string.printable))
     # prepare translation table for removing punctuation
     table = str.maketrans('', '', string.punctuation)
     for tar_phrase, src_phrase in parallel_text:
-        tar_clean = clean_phrase(tar_phrase, table)
-        src_clean = clean_phrase(src_phrase, table)
+        tar_clean = clean_phrase(tar_phrase, table, re_print)
+        src_clean = clean_phrase(src_phrase, table, re_print)
         cleaned.append([tar_clean, src_clean])
     return array(cleaned)
 
@@ -87,6 +87,18 @@ def encode_sequences(tokenizer, length, lines):
     return X
 
 
+# map an integer to a word
+def word_for_id(integer, tokenizer):
+    if not isinstance(integer, int):
+        raise ValueError
+    if integer == 0:
+        return ''
+    for word, index in tokenizer.word_index.items():
+        if index == integer:
+            return word
+    return None
+
+
 source_language = 'french'
 target_language = 'english'
 # Clean the data
@@ -98,12 +110,12 @@ pairs = to_pairs(doc)
 # clean sentences
 clean_pairs = clean_pairs(pairs)
 # spot check
-for i in range(20):
-    print('[%s] => [%s]' % (clean_pairs[i, 0], clean_pairs[i, 1]))
+#  for i in range(20):
+#      print('[%s] => [%s]' % (clean_pairs[i, 0], clean_pairs[i, 1]))
 
 # Tokenize the words
 vocab_length = None
-phrase_length = 10
+phrase_length = 5
 validation_ratio = 0.1
 test_ratio = 0.1
 if validation_ratio + test_ratio > 0.5:
@@ -131,16 +143,17 @@ stats['number_of_train_phrases'] = int(idx_phrase * (1-validation_ratio-test_rat
 stats['number_of_val_phrases'] = int(idx_phrase * validation_ratio)
 stats['number_of_test_phrases'] = int(idx_phrase * test_ratio)
 
+pairs = list(zip(encoded_source, encoded_target))
+shuffle(pairs)
+for i in range(10):
+    source_ex = ' '.join(filter(None, [word_for_id(int(token), source_tokenizer) for token in pairs[i][0].split(' ')]))
+    target_ex = ' '.join(filter(None, [word_for_id(int(token), target_tokenizer) for token in pairs[i][1].split(' ')]))
+    print('[%s] => [%s]' % (source_ex, target_ex))
+
 # Combine pairs
-train_pairs = zip(encoded_source[:stats['number_of_train_phrases']],
-                  encoded_target[:stats['number_of_train_phrases']]
-                  )
-val_pairs = zip(encoded_source[stats['number_of_train_phrases']:int(idx_phrase*(1-test_ratio))],
-                encoded_target[stats['number_of_train_phrases']:int(idx_phrase*(1-test_ratio))]
-                )
-test_pairs = zip(encoded_source[int(idx_phrase*(1-test_ratio)):],
-                 encoded_target[int(idx_phrase*(1-test_ratio)):]
-                 )
+train_pairs = pairs[:stats['number_of_train_phrases']]
+val_pairs = pairs[stats['number_of_train_phrases']:stats['number_of_train_phrases']+stats['number_of_val_phrases']]
+test_pairs = pairs[stats['number_of_train_phrases']+stats['number_of_val_phrases']:]
 # Write to file as new lines
 with open('corpra/%s_to_%s_train.txt' % (source_language, target_language), 'w') as train_file,\
         open('corpra/%s_to_%s_val.txt' % (source_language, target_language), 'w') as val_file,\
